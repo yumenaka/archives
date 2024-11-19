@@ -109,7 +109,8 @@ Simply use your format type (e.g. `Zip`) to call `Extract()`. You'll pass in a c
 var format archives.Zip
 
 err := format.Extract(ctx, input, func(ctx context.Context, f archives.FileInfo) error {
-	// do something with the file
+	// do something with the file here; or, if you only want a specific file or directory,
+	// just return until you come across the desired f.NameInArchive value(s)
 	return nil
 })
 if err != nil {

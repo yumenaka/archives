@@ -42,8 +42,6 @@ func TestPathWithoutTopDir(t *testing.T) {
 	}
 }
 
-//go:generate zip testdata/test.zip LICENSE
-
 var (
 	//go:embed testdata/test.zip
 	testZIP []byte
