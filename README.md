@@ -13,6 +13,7 @@ Introducing **mholt/archives** - a cross-platform, multi-format Go library for w
 	- [`FileFS`](https://pkg.go.dev/github.com/mholt/archives#FileFS)
 	- [`DirFS`](https://pkg.go.dev/github.com/mholt/archives#DirFS)
 	- [`ArchiveFS`](https://pkg.go.dev/github.com/mholt/archives#ArchiveFS)
+- Recurse into archive files transparently using [`DeepFS`](https://pkg.go.dev/github.com/mholt/archives#FileFS)
 - Compress and decompress files
 - Create and extract archive files
 - Walk or traverse into archive files
@@ -84,9 +85,10 @@ if err != nil {
 }
 defer out.Close()
 
-// we can use the Archive type to gzip a tarball
-// (compression is not required; you could use Tar directly)
-format := archives.Archive{
+// we can use the CompressedArchive type to gzip a tarball
+// (since we're writing, we only set Archival, but if you're
+// going to read, set Extraction)
+format := archives.CompressedArchive{
 	Compression: archives.Gz{},
 	Archival:    archives.Tar{},
 }
@@ -317,3 +319,19 @@ if err != nil {
 
 The code is similar for inserting into a Zip archive, except you'll call `Insert()` on a `Zip{}` value instead.
 
+
+### Traverse into archives while walking
+
+If you are traversing/walking the file system using [`fs.WalkDir()`](https://pkg.go.dev/io/fs#WalkDir), the [**`DeepFS`**](https://pkg.go.dev/github.com/mholt/archives#DeepFS) type lets you walk the contents of archives (and compressed archives!) transparently as if the archive file was a regular directory on disk.
+
+Simply root your DeepFS at a real path, then walk away:
+
+```go
+fsys := &archives.DeepFS{Root: "/some/dir"}
+
+err := fs.WalkDir(fsys, ".", func(fpath string, d fs.DirEntry, err error) error {
+	...
+})
+```
+
+You'll notice that paths within archives look like `/some/dir/archive.zip/foo/bar.txt`. If you pass a path like that into `fsys.Open()`, it will split the path at the end of the archive file (`/some/dir/archive.zip`) and use the remainder of the path (`foo/bar.txt`) inside the archive.
