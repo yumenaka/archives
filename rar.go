@@ -31,6 +31,7 @@ type Rar struct {
 }
 
 func (Rar) Extension() string { return ".rar" }
+func (Rar) MediaType() string { return "application/vnd.rar" }
 
 func (r Rar) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

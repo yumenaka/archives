@@ -31,6 +31,7 @@ type Gz struct {
 }
 
 func (Gz) Extension() string { return ".gz" }
+func (Gz) MediaType() string { return "application/gzip" }
 
 func (gz Gz) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -65,7 +66,7 @@ func FileSystem(ctx context.Context, filename string, stream ReaderAtSeeker) (fs
 
 		// real folders can be accessed easily
 		if info.IsDir() {
-			return os.DirFS(filename), nil
+			return DirFS{os.DirFS(filename)}, nil
 		}
 
 		// if any archive formats recognize this file, access it like a folder
@@ -200,6 +201,36 @@ func (f FileFS) checkName(name, op string) error {
 type compressedFile struct {
 	io.Reader // decompressor
 	closeBoth // file and decompressor
+}
+
+// DirFS is returned by FileSystem() if the input is a real directory
+// on disk. It merely wraps the return value of os.DirFS(), which is
+// (unfortunately) unexported, making it impossible to use with type
+// assertions to determine which kind of FS was returned. Because this
+// wrapper type is exported, it can be type-asserted against.
+// If this type is used manually and the embedded type does not
+// implement the same interfaces os.dirFS does, errors will occur.
+type DirFS struct{ fs.FS }
+
+func (d DirFS) ReadFile(name string) ([]byte, error) {
+	if fsys, ok := d.FS.(fs.ReadFileFS); ok {
+		return fsys.ReadFile(name)
+	}
+	return nil, fmt.Errorf("not supported; wrapped type must implement fs.ReadFileFS")
+}
+
+func (d DirFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if fsys, ok := d.FS.(fs.ReadDirFS); ok {
+		return fsys.ReadDir(name)
+	}
+	return nil, fmt.Errorf("not supported; wrapped type must implement fs.ReadDirFS")
+}
+
+func (d DirFS) Stat(name string) (fs.FileInfo, error) {
+	if fsys, ok := d.FS.(fs.StatFS); ok {
+		return fsys.Stat(name)
+	}
+	return nil, fmt.Errorf("not supported; wrapped type must implement fs.StatFS")
 }
 
 // ArchiveFS allows reading an archive (or a compressed archive) using a
@@ -350,7 +381,7 @@ func (f ArchiveFS) Open(name string) (fs.File, error) {
 	}
 
 	var decompressor io.ReadCloser
-	if decomp, ok := f.Format.(Decompressor); ok {
+	if decomp, ok := f.Format.(Decompressor); ok && decomp != nil {
 		decompressor, err = decomp.OpenReader(inputStream)
 		if err != nil {
 			return nil, err
@@ -411,7 +442,7 @@ func (f ArchiveFS) Open(name string) (fs.File, error) {
 	// files may have a "." component in them, and the underlying format doesn't
 	// know about our file system semantics, so we need to filter ourselves (it's
 	// not significantly less efficient).
-	if ar, ok := f.Format.(Archive); ok {
+	if ar, ok := f.Format.(CompressedArchive); ok {
 		// bypass the CompressedArchive format's opening of the decompressor, since
 		// we already did it because we need to keep it open after returning.
 		// "I BYPASSED THE COMPRESSOR!" -Rey
@@ -632,6 +663,173 @@ func (f *ArchiveFS) Sub(dir string) (fs.FS, error) {
 	result := f
 	result.Prefix = dir
 	return result, nil
+}
+
+// DeepFS is a fs.FS that represents the real file system, but also has
+// the ability to traverse into archive files as if they were part of the
+// regular file system. If a filename component ends with an archive
+// extension (e.g. .zip, .tar, .tar.gz, etc.), then the remainder of the
+// filepath will be considered to be inside that archive.
+//
+// This allows treating archive files transparently as if they were part
+// of the regular file system during a walk, which can be extremely useful
+// for accessing data in an "ordinary" walk of the disk, without needing to
+// first extract all the archives and use more disk space.
+//
+// The listing of archive entries is retained for the lifetime of the
+// DeepFS value for efficiency, but this can use more memory if archives
+// contain a lot of files.
+type DeepFS struct {
+	// The root filepath on disk.
+	Root string
+
+	// An optional context, mainly for cancellation.
+	Context context.Context
+
+	// remember archive file systems for efficiency
+	inners map[string]fs.FS
+	mu     sync.Mutex
+}
+
+func (fsys *DeepFS) Open(name string) (fs.File, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
+	}
+	name = path.Join(fsys.Root, name)
+	realPath, innerPath := fsys.splitPath(name)
+	if innerPath != "" {
+		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
+			return innerFsys.Open(innerPath)
+		}
+	}
+	return os.Open(realPath)
+}
+
+func (fsys *DeepFS) Stat(name string) (fs.FileInfo, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
+	}
+	name = path.Join(fsys.Root, name)
+	realPath, innerPath := fsys.splitPath(name)
+	if innerPath != "" {
+		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
+			return fs.Stat(innerFsys, innerPath)
+		}
+	}
+	return os.Stat(realPath)
+}
+
+// ReadDir returns the directory listing for the given directory name,
+// but for any entries that appear by their file extension to be archive
+// files, they are slightly modified to always return true for IsDir(),
+// since we have the unique ability to list the contents of archives as
+// if they were directories.
+func (fsys *DeepFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
+	}
+	name = path.Join(fsys.Root, name)
+	realPath, innerPath := fsys.splitPath(name)
+	if innerPath != "" {
+		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
+			return fs.ReadDir(innerFsys, innerPath)
+		}
+	}
+	entries, err := os.ReadDir(realPath)
+	if err != nil {
+		return nil, err
+	}
+	// make sure entries that appear to be archive files indicate they are a directory
+	// so the fs package will try to walk them
+	for i, entry := range entries {
+		if slices.Contains(archiveExtensions, path.Ext(entry.Name())) {
+			entries[i] = alwaysDirEntry{entry}
+		}
+	}
+	return entries, nil
+}
+
+// getInnerFsys reuses "inner" file systems, because for example, archives.ArchiveFS
+// amortizes directory entries with the first call to ReadDir; if we don't reuse the
+// file systems then they have to rescan the same archive multiple times.
+func (fsys *DeepFS) getInnerFsys(realPath string) fs.FS {
+	realPath = filepath.Clean(realPath)
+
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
+
+	if fsys.inners == nil {
+		fsys.inners = make(map[string]fs.FS)
+	} else if innerFsys, ok := fsys.inners[realPath]; ok {
+		return innerFsys
+	}
+	innerFsys, err := FileSystem(fsys.context(), realPath, nil)
+	if err == nil {
+		fsys.inners[realPath] = innerFsys
+		return innerFsys
+	}
+	return nil
+}
+
+// splitPath splits a file path into the "real" path and the "inner" path components,
+// where the split point is the extension of an archive filetype like ".zip" or ".tar.gz".
+// The real path is the path that can be accessed on disk and will be returned with
+// filepath separators. The inner path is the path that can be used within the archive.
+// If no archive extension is found in the path, only the realPath is returned.
+// If the input path is precisely an archive file (i.e. ends with an archive file
+// extension), then innerPath is returned as "." which indicates the root of the archive.
+func (*DeepFS) splitPath(path string) (realPath, innerPath string) {
+	for _, ext := range archiveExtensions {
+		idx := strings.Index(path+"/", ext+"/")
+		if idx < 0 {
+			continue
+		}
+		splitPos := idx + len(ext)
+		realPath = filepath.Clean(filepath.FromSlash(path[:splitPos]))
+		innerPath = strings.TrimPrefix(path[splitPos:], "/")
+		if innerPath == "" {
+			// signal to the caller that this is an archive,
+			// even though it is the very root of the archive
+			innerPath = "."
+		}
+		return
+	}
+	realPath = filepath.Clean(filepath.FromSlash(path))
+	return
+}
+
+func (fsys *DeepFS) context() context.Context {
+	if fsys.Context != nil {
+		return fsys.Context
+	}
+	return context.Background()
+}
+
+// alwaysDirEntry always returns true for IsDir(). Because
+// DeepFS is able to walk archive files as directories,
+// this is used to trick fs.WalkDir to think they are
+// directories and thus traverse into them.
+type alwaysDirEntry struct {
+	fs.DirEntry
+}
+
+func (alwaysDirEntry) IsDir() bool { return true }
+
+// archiveExtensions contains extensions for popular and supported
+// archive types; sorted by popularity and with respect to some
+// being prefixed by other extensions.
+var archiveExtensions = []string{
+	".zip",
+	".tar",
+	".tgz",
+	".tar.gz",
+	".tar.bz2",
+	".tar.zst",
+	".tar.lz4",
+	".tar.xz",
+	".tar.sz",
+	".tar.s2",
+	".tar.lz",
 }
 
 // TopDirOpen is a special Open() function that may be useful if

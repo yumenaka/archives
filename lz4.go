@@ -19,6 +19,7 @@ type Lz4 struct {
 }
 
 func (Lz4) Extension() string { return ".lz4" }
+func (Lz4) MediaType() string { return "application/x-lz4" }
 
 func (lz Lz4) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

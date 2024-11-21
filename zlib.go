@@ -18,6 +18,7 @@ type Zlib struct {
 }
 
 func (Zlib) Extension() string { return ".zz" }
+func (Zlib) MediaType() string { return "application/zlib" }
 
 func (zz Zlib) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

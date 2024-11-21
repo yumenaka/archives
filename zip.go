@@ -77,7 +77,8 @@ type Zip struct {
 	TextEncoding encoding.Encoding
 }
 
-func (z Zip) Extension() string { return ".zip" }
+func (Zip) Extension() string { return ".zip" }
+func (Zip) MediaType() string { return "application/zip" }
 
 func (z Zip) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

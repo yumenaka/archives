@@ -20,6 +20,7 @@ type Zstd struct {
 }
 
 func (Zstd) Extension() string { return ".zst" }
+func (Zstd) MediaType() string { return "application/zstd" }
 
 func (zs Zstd) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

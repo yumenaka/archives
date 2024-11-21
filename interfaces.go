@@ -12,17 +12,19 @@ type Format interface {
 	// format.
 	Extension() string
 
+	// MediaType returns the MIME type ("content type") of this
+	// format (see RFC 2046).
+	MediaType() string
+
 	// Match returns true if the given name/stream is recognized.
 	// One of the arguments is optional: filename might be empty
-	// if working with an unnamed stream, or stream might be
-	// empty if only working with a filename. The filename should
-	// consist only of the base name, not a path component, and is
-	// typically used for matching by file extension. However,
-	// matching by reading the stream is preferred. Match reads
-	// only as many bytes as needed to determine a match. To
-	// preserve the stream through matching, you should either
-	// buffer what is read by Match, or seek to the last position
-	// before Match was called.
+	// if working with an unnamed stream, or stream might be empty
+	// if only working with a file on disk; but both may also be
+	// specified. The filename should consist only of the base name,
+	// not path components, and is typically used for matching by
+	// file extension. However, matching by reading the stream is
+	// preferred as it is more accurate. Match reads only as many
+	// bytes as needed to determine a match.
 	Match(ctx context.Context, filename string, stream io.Reader) (MatchResult, error)
 }
 
@@ -37,6 +39,7 @@ type Compression interface {
 type Archival interface {
 	Format
 	Archiver
+	Extractor
 }
 
 // Extraction is an archival format that extract from (read) archives.
@@ -69,6 +72,7 @@ type Archiver interface {
 
 // ArchiveAsyncJob contains a File to be archived and a channel that
 // the result of the archiving should be returned on.
+// EXPERIMENTAL: Subject to change or removal.
 type ArchiveAsyncJob struct {
 	File   FileInfo
 	Result chan<- error
@@ -77,6 +81,7 @@ type ArchiveAsyncJob struct {
 // ArchiverAsync is an Archiver that can also create archives
 // asynchronously by pumping files into a channel as they are
 // discovered.
+// EXPERIMENTAL: Subject to change or removal.
 type ArchiverAsync interface {
 	Archiver
 
@@ -102,7 +107,7 @@ type Extractor interface {
 }
 
 // Inserter can insert files into an existing archive.
-// EXPERIMENTAL: This API is subject to change.
+// EXPERIMENTAL: Subject to change.
 type Inserter interface {
 	// Insert inserts the files into archive.
 	//

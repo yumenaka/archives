@@ -31,7 +31,8 @@ type SevenZip struct {
 	Password string
 }
 
-func (z SevenZip) Extension() string { return ".7z" }
+func (SevenZip) Extension() string { return ".7z" }
+func (SevenZip) MediaType() string { return "application/x-7z-compressed" }
 
 func (z SevenZip) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

@@ -18,6 +18,7 @@ type Brotli struct {
 }
 
 func (Brotli) Extension() string { return ".br" }
+func (Brotli) MediaType() string { return "application/x-br" }
 
 func (br Brotli) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

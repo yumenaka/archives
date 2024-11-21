@@ -44,7 +44,8 @@ type S2 struct {
 	SnappyIncompatible bool
 }
 
-func (sz Sz) Extension() string { return ".sz" }
+func (Sz) Extension() string { return ".sz" }
+func (Sz) MediaType() string { return "application/x-snappy-framed" }
 
 func (sz Sz) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

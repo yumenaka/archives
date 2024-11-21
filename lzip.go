@@ -18,6 +18,7 @@ func init() {
 type Lzip struct{}
 
 func (Lzip) Extension() string { return ".lz" }
+func (Lzip) MediaType() string { return "application/x-lzip" }
 
 func (lz Lzip) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

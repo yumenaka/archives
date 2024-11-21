@@ -19,6 +19,7 @@ type Bz2 struct {
 }
 
 func (Bz2) Extension() string { return ".bz2" }
+func (Bz2) MediaType() string { return "application/x-bzip2" }
 
 func (bz Bz2) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult

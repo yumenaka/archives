@@ -18,6 +18,7 @@ func init() {
 type Xz struct{}
 
 func (Xz) Extension() string { return ".xz" }
+func (Xz) MediaType() string { return "application/x-xz" }
 
 func (x Xz) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult
