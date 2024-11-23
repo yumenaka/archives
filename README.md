@@ -13,7 +13,7 @@ Introducing **mholt/archives** - a cross-platform, multi-format Go library for w
 	- [`FileFS`](https://pkg.go.dev/github.com/mholt/archives#FileFS)
 	- [`DirFS`](https://pkg.go.dev/github.com/mholt/archives#DirFS)
 	- [`ArchiveFS`](https://pkg.go.dev/github.com/mholt/archives#ArchiveFS)
-- Recurse into archive files transparently using [`DeepFS`](https://pkg.go.dev/github.com/mholt/archives#FileFS)
+- Seamlessly recurse into archive files using [`DeepFS`](https://pkg.go.dev/github.com/mholt/archives#DeepFS)
 - Compress and decompress files
 - Create and extract archive files
 - Walk or traverse into archive files
