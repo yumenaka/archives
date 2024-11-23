@@ -48,6 +48,10 @@ Introducing **mholt/archives** - a cross-platform, multi-format Go library for w
 - .rar (read-only)
 - .7z (read-only)
 
+## Command line utility
+
+There is an independently-maintained command line tool called [**`arc`**](https://github.com/jm33-m0/arc) currently in development that will expose many of the functions of this library to a shell.
+
 ## Library use
 
 ```bash
