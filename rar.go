@@ -106,13 +106,8 @@ func (r Rar) Extract(ctx context.Context, sourceArchive io.Reader, handleFile Fi
 		err = handleFile(ctx, file)
 		if errors.Is(err, fs.SkipAll) {
 			break
-		} else if errors.Is(err, fs.SkipDir) {
-			// if a directory, skip this path; if a file, skip the folder path
-			dirPath := hdr.Name
-			if !hdr.IsDir {
-				dirPath = path.Dir(hdr.Name) + "/"
-			}
-			skipDirs.add(dirPath)
+		} else if errors.Is(err, fs.SkipDir) && file.IsDir() {
+			skipDirs.add(hdr.Name)
 		} else if err != nil {
 			return fmt.Errorf("handling file: %s: %w", hdr.Name, err)
 		}

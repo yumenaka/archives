@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"path"
 	"strings"
 
 	"github.com/bodgit/sevenzip"
@@ -103,13 +102,10 @@ func (z SevenZip) Extract(ctx context.Context, sourceArchive io.Reader, handleFi
 		}
 
 		err := handleFile(ctx, file)
-		if errors.Is(err, fs.SkipDir) {
-			// if a directory, skip this path; if a file, skip the folder path
-			dirPath := f.Name
-			if !file.IsDir() {
-				dirPath = path.Dir(f.Name) + "/"
-			}
-			skipDirs.add(dirPath)
+		if errors.Is(err, fs.SkipAll) {
+			break
+		} else if errors.Is(err, fs.SkipDir) && file.IsDir() {
+			skipDirs.add(f.Name)
 		} else if err != nil {
 			if z.ContinueOnError {
 				log.Printf("[ERROR] %s: %v", f.Name, err)
