@@ -837,6 +837,20 @@ var archiveExtensions = []string{
 	".tar.lz",
 }
 
+// PathContainsArchive returns true if the path contains an archive file (i.e.
+// whether the path traverses into an archive) solely by lexical analysis (no
+// reading of files or headers is performed). Such a path is not typically
+// usable by the OS, but can be used by the DeepFS type. Example:
+// "/foo/bar/example.zip/path/in/archive"
+func PathContainsArchive(path string) bool {
+	for _, ext := range archiveExtensions {
+		if strings.Contains(path+"/", ext+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // TopDirOpen is a special Open() function that may be useful if
 // a file system root was created by extracting an archive.
 //
