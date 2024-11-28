@@ -676,9 +676,14 @@ func (f *ArchiveFS) Sub(dir string) (fs.FS, error) {
 // for accessing data in an "ordinary" walk of the disk, without needing to
 // first extract all the archives and use more disk space.
 //
+// Archives within archives are not supported.
+//
 // The listing of archive entries is retained for the lifetime of the
 // DeepFS value for efficiency, but this can use more memory if archives
 // contain a lot of files.
+//
+// The exported fields may be changed during the lifetime of a DeepFS value
+// (but not concurrently). It is safe to use this type as an FS concurrently.
 type DeepFS struct {
 	// The root filepath on disk.
 	Root string
