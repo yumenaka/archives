@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -66,7 +67,7 @@ func FileSystem(ctx context.Context, filename string, stream ReaderAtSeeker) (fs
 
 		// real folders can be accessed easily
 		if info.IsDir() {
-			return DirFS{os.DirFS(filename)}, nil
+			return DirFS(filename), nil
 		}
 
 		// if any archive formats recognize this file, access it like a folder
@@ -203,34 +204,67 @@ type compressedFile struct {
 	closeBoth // file and decompressor
 }
 
-// DirFS is returned by FileSystem() if the input is a real directory
-// on disk. It merely wraps the return value of os.DirFS(), which is
-// (unfortunately) unexported, making it impossible to use with type
-// assertions to determine which kind of FS was returned. Because this
-// wrapper type is exported, it can be type-asserted against.
-// If this type is used manually and the embedded type does not
-// implement the same interfaces os.dirFS does, errors will occur.
-type DirFS struct{ fs.FS }
+// DirFS is similar to os.dirFS (obtained via os.DirFS()), but it is
+// exported so it can be used with type assertions. It also returns
+// FileInfo/DirEntry values where Name() always returns the name of
+// the directory instead of ".". This type does not guarantee any
+// sort of sandboxing.
+type DirFS string
 
-func (d DirFS) ReadFile(name string) ([]byte, error) {
-	if fsys, ok := d.FS.(fs.ReadFileFS); ok {
-		return fsys.ReadFile(name)
+// Open opens the named file.
+func (d DirFS) Open(name string) (fs.File, error) {
+	if err := d.checkName(name, "open"); err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("not supported; wrapped type must implement fs.ReadFileFS")
+	return os.Open(filepath.Join(string(d), name))
 }
 
+// ReadDir returns a listing of all the files in the named directory.
 func (d DirFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if fsys, ok := d.FS.(fs.ReadDirFS); ok {
-		return fsys.ReadDir(name)
+	if err := d.checkName(name, "readdir"); err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("not supported; wrapped type must implement fs.ReadDirFS")
+	return os.ReadDir(filepath.Join(string(d), name))
 }
 
+// Stat returns info about the named file.
 func (d DirFS) Stat(name string) (fs.FileInfo, error) {
-	if fsys, ok := d.FS.(fs.StatFS); ok {
-		return fsys.Stat(name)
+	if err := d.checkName(name, "stat"); err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("not supported; wrapped type must implement fs.StatFS")
+	info, err := os.Stat(filepath.Join(string(d), name))
+	if err != nil {
+		return info, err
+	}
+	if info.Name() == "." {
+		info = dotFileInfo{info, filepath.Base(string(d))}
+	}
+	return info, nil
+}
+
+// Sub returns an FS corresponding to the subtree rooted at dir.
+func (d DirFS) Sub(dir string) (fs.FS, error) {
+	if err := d.checkName(dir, "sub"); err != nil {
+		return nil, err
+	}
+	info, err := d.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", dir)
+	}
+	return DirFS(filepath.Join(string(d), dir)), nil
+}
+
+// checkName returns an error if name is not a valid path according to the docs of
+// the io/fs package, with an extra cue taken from the standard lib's implementation
+// of os.dirFS.Open(), which checks for invalid characters in Windows paths.
+func (DirFS) checkName(name, op string) error {
+	if !fs.ValidPath(name) || runtime.GOOS == "windows" && strings.ContainsAny(name, `\:`) {
+		return &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
+	}
+	return nil
 }
 
 // ArchiveFS allows reading an archive (or a compressed archive) using a
@@ -1019,6 +1053,15 @@ func (implicitDirInfo) Size() int64         { return 0 }
 func (d implicitDirInfo) Mode() fs.FileMode { return d.Type() }
 func (implicitDirInfo) ModTime() time.Time  { return time.Time{} }
 func (implicitDirInfo) Sys() any            { return nil }
+
+// dotFileInfo is a fs.FileInfo that can be used to provide
+// the true name instead of ".".
+type dotFileInfo struct {
+	fs.FileInfo
+	name string
+}
+
+func (d dotFileInfo) Name() string { return d.name }
 
 // Interface guards
 var (
