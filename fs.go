@@ -734,7 +734,7 @@ func (fsys *DeepFS) Open(name string) (fs.File, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
 	}
-	name = path.Join(fsys.Root, name)
+	name = path.Join(filepath.ToSlash(fsys.Root), name)
 	realPath, innerPath := fsys.splitPath(name)
 	if innerPath != "" {
 		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
@@ -748,7 +748,7 @@ func (fsys *DeepFS) Stat(name string) (fs.FileInfo, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
 	}
-	name = path.Join(fsys.Root, name)
+	name = path.Join(filepath.ToSlash(fsys.Root), name)
 	realPath, innerPath := fsys.splitPath(name)
 	if innerPath != "" {
 		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
@@ -767,7 +767,7 @@ func (fsys *DeepFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
 	}
-	name = path.Join(fsys.Root, name)
+	name = path.Join(filepath.ToSlash(fsys.Root), name)
 	realPath, innerPath := fsys.splitPath(name)
 	if innerPath != "" {
 		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
