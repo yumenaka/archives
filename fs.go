@@ -505,7 +505,7 @@ func (f ArchiveFS) Stat(name string) (fs.FileInfo, error) {
 		if f.Path != "" {
 			fileInfo, err := os.Stat(f.Path)
 			if err != nil {
-				return nil, err
+				return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("stat(a) %s: %w", name, err)}
 			}
 			return dirFileInfo{fileInfo}, nil
 		} else if f.Stream != nil {
@@ -521,7 +521,7 @@ func (f ArchiveFS) Stat(name string) (fs.FileInfo, error) {
 		if info, ok := f.contents[name]; ok {
 			return info, nil
 		}
-		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("stat %s: %w", name, fs.ErrNotExist)}
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("stat(b) %s: %w", name, fs.ErrNotExist)}
 	}
 
 	var archiveFile *os.File
@@ -529,19 +529,26 @@ func (f ArchiveFS) Stat(name string) (fs.FileInfo, error) {
 	if f.Stream == nil {
 		archiveFile, err = os.Open(f.Path)
 		if err != nil {
-			return nil, err
+			return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("stat(c) %s: %w", name, err)}
 		}
 		defer archiveFile.Close()
 	}
 
 	var result FileInfo
+	var fallback fs.FileInfo // possibly needed if only an implied directory
 	handler := func(ctx context.Context, file FileInfo) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if path.Clean(file.NameInArchive) == name {
+		cleanName := path.Clean(file.NameInArchive)
+		if cleanName == name {
 			result = file
 			return fs.SkipAll
+		}
+		// it's possible the requested name is an implicit directory;
+		// remember if we see it along the way, just in case
+		if fallback == nil && strings.HasPrefix(cleanName, name) {
+			fallback = implicitDirInfo{implicitDirEntry{name}}
 		}
 		return nil
 	}
@@ -551,10 +558,15 @@ func (f ArchiveFS) Stat(name string) (fs.FileInfo, error) {
 	}
 	err = f.Format.Extract(f.context(), inputStream, handler)
 	if err != nil && result.FileInfo == nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("stat(d) %s: %w", name, fs.ErrNotExist)}
 	}
 	if result.FileInfo == nil {
-		return nil, fs.ErrNotExist
+		// looks like the requested name does not exist in the archive,
+		// but we can return some basic info if it was an implicit directory
+		if fallback != nil {
+			return fallback, nil
+		}
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("stat(e) %s: %w", name, fs.ErrNotExist)}
 	}
 	return result.FileInfo, nil
 }
