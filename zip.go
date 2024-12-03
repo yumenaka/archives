@@ -245,6 +245,62 @@ func (z Zip) Extract(ctx context.Context, sourceArchive io.Reader, handleFile Fi
 	return nil
 }
 
+func (z Zip) CheckNonUTF8Zip(ctx context.Context, sourceArchive io.Reader, handleFile FileHandler) (reader *zip.Reader, err error) {
+	sra, ok := sourceArchive.(seekReaderAt)
+	if !ok {
+		return reader, fmt.Errorf("input type must be an io.ReaderAt and io.Seeker because of zip format constraints")
+	}
+
+	size, err := streamSizeBySeeking(sra)
+	if err != nil {
+		return reader, fmt.Errorf("determining stream size: %w", err)
+	}
+
+	zr, err := zip.NewReader(sra, size)
+	if err != nil {
+		return reader, err
+	}
+	reader = zr
+	// important to initialize to non-nil, empty value due to how fileIsIncluded works
+	skipDirs := skipList{}
+
+	for i, f := range zr.File {
+		if err := ctx.Err(); err != nil {
+			return reader, err // honor context cancellation
+		}
+		z.decodeText(&f.FileHeader)
+		if fileIsIncluded(skipDirs, f.Name) {
+			continue
+		}
+		file := FileInfo{
+			FileInfo:      f.FileInfo(),
+			Header:        f.FileHeader,
+			NameInArchive: f.Name,
+			Open: func() (fs.File, error) {
+				openedFile, err := f.Open()
+				if err != nil {
+					return nil, err
+				}
+				return fileInArchive{openedFile, f.FileInfo()}, nil
+			},
+		}
+
+		err := handleFile(ctx, file)
+		if errors.Is(err, fs.SkipDir) {
+			// if a directory, skip this path; if a file, skip the folder path
+			dirPath := f.Name
+			if !file.IsDir() {
+				dirPath = path.Dir(f.Name) + "/"
+			}
+			skipDirs.add(dirPath)
+		} else if err != nil {
+			return reader, fmt.Errorf("handling file %d: %s: %w", i, f.Name, err)
+		}
+	}
+
+	return reader, nil
+}
+
 // decodeText decodes the name and comment fields from hdr into UTF-8.
 // It is a no-op if the text is already UTF-8 encoded or if z.TextEncoding
 // is not specified.

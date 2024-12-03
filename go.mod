@@ -1,4 +1,4 @@
-module github.com/mholt/archives
+module github.com/yumenaka/archives
 
 go 1.22.2
 
