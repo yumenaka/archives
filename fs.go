@@ -834,7 +834,7 @@ func (*DeepFS) splitPath(path string) (realPath, innerPath string) {
 
 	// start at 1 instead of 0 because we know if the first slash is at 0, the part will be empty
 	start, end := 1, strings.Index(path[1:], "/")+1
-	if end-start <= 0 {
+	if end-start < 0 {
 		end = len(path)
 	}
 
@@ -863,7 +863,7 @@ func (*DeepFS) splitPath(path string) (realPath, innerPath string) {
 			break
 		}
 		end = strings.Index(path[start:], "/") + start
-		if end-start <= 0 {
+		if end-start < 0 {
 			end = len(path)
 		}
 	}
