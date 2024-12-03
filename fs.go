@@ -781,7 +781,7 @@ func (fsys *DeepFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	// make sure entries that appear to be archive files indicate they are a directory
 	// so the fs package will try to walk them
 	for i, entry := range entries {
-		if slices.Contains(archiveExtensions, path.Ext(entry.Name())) {
+		if slices.Contains(archiveExtensions, strings.ToLower(path.Ext(entry.Name()))) {
 			entries[i] = alwaysDirEntry{entry}
 		}
 	}
@@ -811,28 +811,64 @@ func (fsys *DeepFS) getInnerFsys(realPath string) fs.FS {
 }
 
 // splitPath splits a file path into the "real" path and the "inner" path components,
-// where the split point is the extension of an archive filetype like ".zip" or ".tar.gz".
+// where the split point is the first extension of an archive filetype like ".zip" or
+// ".tar.gz" that occurs in the path.
+//
 // The real path is the path that can be accessed on disk and will be returned with
-// filepath separators. The inner path is the path that can be used within the archive.
+// platform filepath separators. The inner path is the io/fs-compatible path that can
+// be used within the archive.
+//
 // If no archive extension is found in the path, only the realPath is returned.
 // If the input path is precisely an archive file (i.e. ends with an archive file
 // extension), then innerPath is returned as "." which indicates the root of the archive.
 func (*DeepFS) splitPath(path string) (realPath, innerPath string) {
-	for _, ext := range archiveExtensions {
-		idx := strings.Index(path+"/", ext+"/")
-		if idx < 0 {
-			continue
-		}
-		splitPos := idx + len(ext)
-		realPath = filepath.Clean(filepath.FromSlash(path[:splitPos]))
-		innerPath = strings.TrimPrefix(path[splitPos:], "/")
-		if innerPath == "" {
-			// signal to the caller that this is an archive,
-			// even though it is the very root of the archive
-			innerPath = "."
-		}
+	if len(path) < 2 {
+		realPath = path
 		return
 	}
+
+	// slightly more LoC, but more efficient, than exploding the path on every slash,
+	// is segmenting the path by using indices and looking at slices of the same
+	// string on every iteration; this avoids many allocations which can be valuable
+	// since this can be a hot path
+
+	// start at 1 instead of 0 because we know if the first slash is at 0, the part will be empty
+	start, end := 1, strings.Index(path[1:], "/")+1
+	if end-start <= 0 {
+		end = len(path)
+	}
+
+	for {
+		part := strings.TrimRight(strings.ToLower(path[start:end]), " ")
+
+		for _, ext := range archiveExtensions {
+			if strings.HasSuffix(part, ext) {
+				// we've found an archive extension, so the path until the end of this segment is
+				// the "real" OS path, and what remains (if anything( is the path within the archive
+				realPath = filepath.Clean(filepath.FromSlash(path[:end]))
+				if end < len(path) {
+					innerPath = path[end+1:]
+				} else {
+					// signal to the caller that this is an archive,
+					// even though it is the very root of the archive
+					innerPath = "."
+				}
+				return
+			}
+		}
+
+		// advance to the next segment, or end of string
+		start = end + 1
+		if start > len(path) {
+			break
+		}
+		end = strings.Index(path[start:], "/") + start
+		if end-start <= 0 {
+			end = len(path)
+		}
+	}
+
+	// no archive extension found, so entire path is real path
 	realPath = filepath.Clean(filepath.FromSlash(path))
 	return
 }
