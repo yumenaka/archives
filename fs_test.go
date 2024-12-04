@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -38,6 +39,67 @@ func TestPathWithoutTopDir(t *testing.T) {
 	} {
 		if actual := pathWithoutTopDir(tc.input); actual != tc.expect {
 			t.Errorf("Test %d (input=%s): Expected '%s' but got '%s'", i, tc.input, tc.expect, actual)
+		}
+	}
+}
+
+func TestSplitPath(t *testing.T) {
+	d := DeepFS{}
+	for i, testCase := range []struct {
+		input, expectedReal, expectedInner string
+	}{
+		{
+			input:         "/",
+			expectedReal:  "/",
+			expectedInner: "",
+		},
+		{
+			input:         "foo",
+			expectedReal:  "foo",
+			expectedInner: "",
+		},
+		{
+			input:         "foo/bar",
+			expectedReal:  filepath.Join("foo", "bar"),
+			expectedInner: "",
+		},
+		{
+			input:         "foo.zip",
+			expectedReal:  filepath.Join("foo.zip"),
+			expectedInner: ".",
+		},
+		{
+			input:         "foo.zip/a",
+			expectedReal:  "foo.zip",
+			expectedInner: "a",
+		},
+		{
+			input:         "foo.zip/a/b",
+			expectedReal:  "foo.zip",
+			expectedInner: "a/b",
+		},
+		{
+			input:         "a/b/foobar.zip/c",
+			expectedReal:  filepath.Join("a", "b", "foobar.zip"),
+			expectedInner: "c",
+		},
+		{
+			input:         "a/foo.zip/b/test.tar",
+			expectedReal:  filepath.Join("a", "foo.zip"),
+			expectedInner: "b/test.tar",
+		},
+		{
+			input:         "a/foo.zip/b/test.tar/c",
+			expectedReal:  filepath.Join("a", "foo.zip"),
+			expectedInner: "b/test.tar/c",
+		},
+	} {
+		actualReal, actualInner := d.splitPath(testCase.input)
+		if actualReal != testCase.expectedReal {
+			t.Errorf("Test %d (input=%q): expected real path %q but got %q", i, testCase.input, testCase.expectedReal, actualReal)
+		}
+		if actualInner != testCase.expectedInner {
+			t.Errorf("Test %d (input=%q): expected inner path %q but got %q", i, testCase.input, testCase.expectedInner, actualInner)
 		}
 	}
 }
