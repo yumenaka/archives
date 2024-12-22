@@ -104,6 +104,43 @@ func TestSplitPath(t *testing.T) {
 	}
 }
 
+func TestPathContainsArchive(t *testing.T) {
+	for i, testCase := range []struct {
+		input    string
+		expected bool
+	}{
+		{
+			input:    "",
+			expected: false,
+		},
+		{
+			input:    "foo",
+			expected: false,
+		},
+		{
+			input:    "foo.zip",
+			expected: true,
+		},
+		{
+			input:    "a/b/c.tar.gz",
+			expected: true,
+		},
+		{
+			input:    "a/b/c.tar.gz/d",
+			expected: true,
+		},
+		{
+			input:    "a/b/c.txt",
+			expected: false,
+		},
+	} {
+		actual := PathContainsArchive(testCase.input)
+		if actual != testCase.expected {
+			t.Errorf("Test %d (input=%q): expected %v but got %v", i, testCase.input, testCase.expected, actual)
+		}
+	}
+}
+
 var (
 	//go:embed testdata/test.zip
 	testZIP []byte

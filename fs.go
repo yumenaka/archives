@@ -919,15 +919,15 @@ var archiveExtensions = []string{
 	".tar.lz",
 }
 
-// FilepathContainsArchive returns true if the path contains an archive file (i.e.
+// PathContainsArchive returns true if the path contains an archive file (i.e.
 // whether the path traverses into an archive) solely by lexical analysis (no
 // reading of files or headers is performed). Such a path is not typically
-// usable by the OS, but can be used by the DeepFS type. Examples:
-// "/foo/example.zip/path/in/archive" or "C:\example.zip\path\in\archive"
-func FilepathContainsArchive(path string) bool {
-	pathPlusSep := path + string(filepath.Separator)
+// usable by the OS, but can be used by the DeepFS type. Slash must be the
+// path component separator. Example: "/foo/example.zip/path/in/archive"
+func PathContainsArchive(path string) bool {
+	pathPlusSep := path + "/"
 	for _, ext := range archiveExtensions {
-		if strings.Contains(pathPlusSep, ext+string(filepath.Separator)) {
+		if strings.Contains(pathPlusSep, ext+"/") {
 			return true
 		}
 	}
