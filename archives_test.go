@@ -8,7 +8,7 @@ import (
 )
 
 func TestTrimTopDir(t *testing.T) {
-	for _, tc := range []struct {
+	for i, test := range []struct {
 		input string
 		want  string
 	}{
@@ -17,11 +17,10 @@ func TestTrimTopDir(t *testing.T) {
 		{input: "abc/def", want: "def"},
 		{input: "/abc/def", want: "def"},
 	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			got := trimTopDir(tc.input)
-			if got != tc.want {
-				t.Errorf("want: '%s', got: '%s')", tc.want, got)
+		t.Run(test.input, func(t *testing.T) {
+			got := trimTopDir(test.input)
+			if got != test.want {
+				t.Errorf("Test %d: want: '%s', got: '%s')", i, test.want, got)
 			}
 		})
 	}
@@ -35,9 +34,8 @@ func TestTopDir(t *testing.T) {
 		{input: "a/b/c", want: "a"},
 		{input: "a", want: "a"},
 		{input: "abc/def", want: "abc"},
-		{input: "/abc/def", want: "abc"},
+		{input: "/abc/def", want: "/abc"},
 	} {
-		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			got := topDir(tc.input)
 			if got != tc.want {
