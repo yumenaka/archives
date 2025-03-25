@@ -21,7 +21,7 @@ func init() {
 type MinLZ struct{}
 
 func (MinLZ) Extension() string { return ".mz" }
-func (MinLZ) MediaType() string { return "application/minlz" }
+func (MinLZ) MediaType() string { return "application/x-minlz-compressed" }
 
 func (mz MinLZ) Match(_ context.Context, filename string, stream io.Reader) (MatchResult, error) {
 	var mr MatchResult
