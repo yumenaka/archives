@@ -36,6 +36,7 @@ Introducing **mholt/archives** - a cross-platform, multi-format Go library for w
 - gzip (.gz)
 - lz4 (.lz4)
 - lzip (.lz)
+- minlz (.mz)
 - snappy (.sz) and S2 (.s2)
 - xz (.xz)
 - zlib (.zz)
