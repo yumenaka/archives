@@ -765,7 +765,7 @@ func (fsys *DeepFS) Open(name string) (fs.File, error) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
 	}
 	name = path.Join(filepath.ToSlash(fsys.Root), name)
-	realPath, innerPath := fsys.splitPath(name)
+	realPath, innerPath := fsys.SplitPath(name)
 	if innerPath != "" {
 		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
 			return innerFsys.Open(innerPath)
@@ -779,7 +779,7 @@ func (fsys *DeepFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, &fs.PathError{Op: "stat", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
 	}
 	name = path.Join(filepath.ToSlash(fsys.Root), name)
-	realPath, innerPath := fsys.splitPath(name)
+	realPath, innerPath := fsys.SplitPath(name)
 	if innerPath != "" {
 		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
 			return fs.Stat(innerFsys, innerPath)
@@ -798,7 +798,7 @@ func (fsys *DeepFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fmt.Errorf("%w: %s", fs.ErrInvalid, name)}
 	}
 	name = path.Join(filepath.ToSlash(fsys.Root), name)
-	realPath, innerPath := fsys.splitPath(name)
+	realPath, innerPath := fsys.SplitPath(name)
 	if innerPath != "" {
 		if innerFsys := fsys.getInnerFsys(realPath); innerFsys != nil {
 			return fs.ReadDir(innerFsys, innerPath)
@@ -811,7 +811,7 @@ func (fsys *DeepFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	// make sure entries that appear to be archive files indicate they are a directory
 	// so the fs package will try to walk them
 	for i, entry := range entries {
-		if slices.Contains(archiveExtensions, strings.ToLower(path.Ext(entry.Name()))) {
+		if PathIsArchive(entry.Name()) {
 			entries[i] = alwaysDirEntry{entry}
 		}
 	}
@@ -840,7 +840,7 @@ func (fsys *DeepFS) getInnerFsys(realPath string) fs.FS {
 	return nil
 }
 
-// splitPath splits a file path into the "real" path and the "inner" path components,
+// SplitPath splits a file path into the "real" path and the "inner" path components,
 // where the split point is the first extension of an archive filetype like ".zip" or
 // ".tar.gz" that occurs in the path.
 //
@@ -851,7 +851,7 @@ func (fsys *DeepFS) getInnerFsys(realPath string) fs.FS {
 // If no archive extension is found in the path, only the realPath is returned.
 // If the input path is precisely an archive file (i.e. ends with an archive file
 // extension), then innerPath is returned as "." which indicates the root of the archive.
-func (*DeepFS) splitPath(path string) (realPath, innerPath string) {
+func (*DeepFS) SplitPath(path string) (realPath, innerPath string) {
 	if len(path) < 2 {
 		realPath = path
 		return
@@ -870,20 +870,20 @@ func (*DeepFS) splitPath(path string) (realPath, innerPath string) {
 
 	for {
 		part := strings.TrimRight(strings.ToLower(path[start:end]), " ")
-		for _, ext := range archiveExtensions {
-			if strings.HasSuffix(part, ext) {
-				// we've found an archive extension, so the path until the end of this segment is
-				// the "real" OS path, and what remains (if anything( is the path within the archive
-				realPath = filepath.Clean(filepath.FromSlash(path[:end]))
-				if end < len(path) {
-					innerPath = path[end+1:]
-				} else {
-					// signal to the caller that this is an archive,
-					// even though it is the very root of the archive
-					innerPath = "."
-				}
-				return
+		if PathIsArchive(part) {
+			// we've found an archive extension, so the path until the end of this segment is
+			// the "real" OS path, and what remains (if anything( is the path within the archive
+			realPath = filepath.Clean(filepath.FromSlash(path[:end]))
+
+			if end < len(path) {
+				innerPath = path[end+1:]
+			} else {
+				// signal to the caller that this is an archive,
+				// even though it is the very root of the archive
+				innerPath = "."
 			}
+			return
+
 		}
 
 		// advance to the next segment, or end of string
@@ -934,6 +934,22 @@ var archiveExtensions = []string{
 	".tar.sz",
 	".tar.s2",
 	".tar.lz",
+}
+
+// PathIsArchive returns true if the path ends with an archive file (i.e.
+// whether the path traverse to an archive) solely by lexical analysis (no
+// reading the files or headers is performed).
+func PathIsArchive(path string) bool {
+	// normalize the extension
+	path = strings.ToLower(path)
+	for _, ext := range archiveExtensions {
+		// Check the full ext
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // PathContainsArchive returns true if the path contains an archive file (i.e.
