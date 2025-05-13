@@ -663,7 +663,7 @@ func (f *ArchiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		// one component remains -- then loop again to make sure it's not a duplicate
 		// (start without the base, since we know the full filename is an actual entry
 		// in the archive, we don't need to create an implicit directory entry for it)
-		startingPath := path.Dir(file.NameInArchive)
+		startingPath := strings.TrimPrefix(path.Dir(file.NameInArchive), "/") // see issue #31
 		for dir, base := path.Dir(startingPath), path.Base(startingPath); base != "."; dir, base = path.Dir(dir), path.Base(dir) {
 			if err := ctx.Err(); err != nil {
 				return err
