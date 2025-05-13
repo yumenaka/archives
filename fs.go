@@ -997,6 +997,8 @@ func PathContainsArchive(path string) bool {
 // an archive file or is an extracted archive file, as they will
 // work with the same filename/path inputs regardless of the
 // presence of a top-level directory.
+//
+// EXPERIMENTAL: Subject to change or removal even after stable release.
 func TopDirOpen(fsys fs.FS, name string) (fs.File, error) {
 	file, err := fsys.Open(name)
 	if err == nil {
@@ -1006,6 +1008,8 @@ func TopDirOpen(fsys fs.FS, name string) (fs.File, error) {
 }
 
 // TopDirStat is like TopDirOpen but for Stat.
+//
+// EXPERIMENTAL: Subject to change or removal even after stable release.
 func TopDirStat(fsys fs.FS, name string) (fs.FileInfo, error) {
 	info, err := fs.Stat(fsys, name)
 	if err == nil {
@@ -1015,6 +1019,8 @@ func TopDirStat(fsys fs.FS, name string) (fs.FileInfo, error) {
 }
 
 // TopDirReadDir is like TopDirOpen but for ReadDir.
+//
+// EXPERIMENTAL: Subject to change or removal even after stable release.
 func TopDirReadDir(fsys fs.FS, name string) ([]fs.DirEntry, error) {
 	entries, err := fs.ReadDir(fsys, name)
 	if err == nil {
