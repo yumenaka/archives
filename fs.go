@@ -663,7 +663,7 @@ func (f *ArchiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		// one component remains -- then loop again to make sure it's not a duplicate
 		// (start without the base, since we know the full filename is an actual entry
 		// in the archive, we don't need to create an implicit directory entry for it)
-		startingPath := path.Dir(file.NameInArchive)
+		startingPath := strings.TrimPrefix(path.Dir(file.NameInArchive), "/") // see issue #31
 		for dir, base := path.Dir(startingPath), path.Base(startingPath); base != "."; dir, base = path.Dir(dir), path.Base(dir) {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -997,6 +997,8 @@ func PathContainsArchive(path string) bool {
 // an archive file or is an extracted archive file, as they will
 // work with the same filename/path inputs regardless of the
 // presence of a top-level directory.
+//
+// EXPERIMENTAL: Subject to change or removal even after stable release.
 func TopDirOpen(fsys fs.FS, name string) (fs.File, error) {
 	file, err := fsys.Open(name)
 	if err == nil {
@@ -1006,6 +1008,8 @@ func TopDirOpen(fsys fs.FS, name string) (fs.File, error) {
 }
 
 // TopDirStat is like TopDirOpen but for Stat.
+//
+// EXPERIMENTAL: Subject to change or removal even after stable release.
 func TopDirStat(fsys fs.FS, name string) (fs.FileInfo, error) {
 	info, err := fs.Stat(fsys, name)
 	if err == nil {
@@ -1015,6 +1019,8 @@ func TopDirStat(fsys fs.FS, name string) (fs.FileInfo, error) {
 }
 
 // TopDirReadDir is like TopDirOpen but for ReadDir.
+//
+// EXPERIMENTAL: Subject to change or removal even after stable release.
 func TopDirReadDir(fsys fs.FS, name string) ([]fs.DirEntry, error) {
 	entries, err := fs.ReadDir(fsys, name)
 	if err == nil {
