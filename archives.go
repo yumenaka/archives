@@ -100,14 +100,9 @@ func FilesFromDisk(ctx context.Context, options *FromDiskOptions, filenames map[
 			var linkTarget string
 			if isSymlink(info) {
 				if options != nil && options.FollowSymlinks {
-					// dereference symlinks
-					filename, err = os.Readlink(filename)
+					filename, info, err = followSymlink(filename)
 					if err != nil {
-						return fmt.Errorf("%s: readlink: %w", filename, err)
-					}
-					info, err = os.Stat(filename)
-					if err != nil {
-						return fmt.Errorf("%s: statting dereferenced symlink: %w", filename, err)
+						return err
 					}
 				} else {
 					// preserve symlinks
@@ -327,5 +322,45 @@ func (s *skipList) add(dir string) {
 	}
 	if !dontAdd {
 		*s = append(*s, dir)
+	}
+}
+
+// followSymlink follows a symlink until it finds a non-symlink,
+// returning the target path, file info, and any error that occurs.
+// It also checks for symlink loops and maximum depth.
+func followSymlink(filename string) (string, os.FileInfo, error) {
+	visited := make(map[string]bool)
+	visited[filename] = true
+	// Limit in Linux kernel: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/fs/namei.c?id=v3.5#n624
+	const maxDepth = 40
+
+	for {
+		linkPath, err := os.Readlink(filename)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: readlink: %w", filename, err)
+		}
+		if !filepath.IsAbs(linkPath) {
+			linkPath = filepath.Join(filepath.Dir(filename), linkPath)
+		}
+		info, err := os.Lstat(linkPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: statting dereferenced symlink: %w", filename, err)
+		}
+
+		// Not a symlink, we've found the target, return it
+		if info.Mode()&os.ModeSymlink == 0 {
+			return linkPath, info, nil
+		}
+
+		if visited[linkPath] {
+			return "", nil, fmt.Errorf("%s: symlink loop", filename)
+		}
+
+		if len(visited) >= maxDepth {
+			return "", nil, fmt.Errorf("%s: maximum symlink depth (%d) exceeded", filename, maxDepth)
+		}
+
+		visited[linkPath] = true
+		filename = linkPath
 	}
 }

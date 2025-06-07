@@ -1,6 +1,9 @@
 package archives
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -261,4 +264,249 @@ func TestNameOnDiskToNameInArchive(t *testing.T) {
 				i, actual, tc.expect, tc.nameOnDisk, tc.rootOnDisk, tc.rootInArchive)
 		}
 	}
+}
+
+func TestFollowSymlink(t *testing.T) {
+	// Create temp directory for tests
+	tmpDir := t.TempDir()
+
+	fixSeparators := func(path string) string {
+		if runtime.GOOS == "windows" {
+			return strings.ReplaceAll(path, "/", "\\")
+		}
+		return path
+	}
+
+	t.Run("single symlink to regular file", func(t *testing.T) {
+		// Create a regular file
+		targetFile := filepath.Join(tmpDir, "target.txt")
+		if err := os.WriteFile(targetFile, []byte("test content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create symlink to the file
+		symlinkFile := filepath.Join(tmpDir, "link.txt")
+		if err := os.Symlink(targetFile, symlinkFile); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink
+		finalPath, info, err := followSymlink(symlinkFile)
+		if err != nil {
+			t.Fatalf("followSymlink failed: %v", err)
+		}
+
+		if finalPath != fixSeparators(targetFile) {
+			t.Errorf("expected final path %s, got %s", fixSeparators(targetFile), finalPath)
+		}
+
+		if info.IsDir() {
+			t.Error("expected file, got directory")
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			t.Error("expected regular file, got symlink")
+		}
+	})
+
+	t.Run("chain of symlinks", func(t *testing.T) {
+		// Create a regular file
+		targetFile := filepath.Join(tmpDir, "chain_target.txt")
+		if err := os.WriteFile(targetFile, []byte("chain content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create first symlink pointing to the file
+		link1 := filepath.Join(tmpDir, "chain_link1.txt")
+		if err := os.Symlink(targetFile, link1); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create second symlink pointing to first symlink
+		link2 := filepath.Join(tmpDir, "chain_link2.txt")
+		if err := os.Symlink(link1, link2); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink on the chain
+		finalPath, info, err := followSymlink(link2)
+		if err != nil {
+			t.Fatalf("followSymlink failed: %v", err)
+		}
+
+		if finalPath != fixSeparators(targetFile) {
+			t.Errorf("expected final path %s, got %s", fixSeparators(targetFile), finalPath)
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			t.Error("expected regular file, got symlink")
+		}
+	})
+
+	t.Run("symlink loop detection", func(t *testing.T) {
+		// Create circular symlinks
+		loop1 := filepath.Join(tmpDir, "loop1.txt")
+		loop2 := filepath.Join(tmpDir, "loop2.txt")
+
+		// Create symlinks that point to each other
+		if err := os.Symlink(loop2, loop1); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(loop1, loop2); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink should detect the loop
+		_, _, err := followSymlink(loop1)
+		if err == nil {
+			t.Error("expected error for symlink loop, got nil")
+		}
+		if !strings.Contains(err.Error(), "symlink loop") {
+			t.Errorf("expected 'symlink loop' error, got: %v", err)
+		}
+	})
+
+	t.Run("relative path symlink", func(t *testing.T) {
+		// Create subdirectory
+		subDir := filepath.Join(tmpDir, "subdir")
+		if err := os.Mkdir(subDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create target file in subdirectory
+		targetFile := filepath.Join(tmpDir, "relative_target.txt")
+		if err := os.WriteFile(targetFile, []byte("relative content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create symlink with relative path from tmpDir to subdir/target
+		symlinkFile := filepath.Join(subDir, "relative_link.txt")
+		if err := os.Symlink("../relative_target.txt", symlinkFile); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink
+		finalPath, info, err := followSymlink(symlinkFile)
+		if err != nil {
+			t.Fatalf("followSymlink failed: %v", err)
+		}
+
+		if finalPath != fixSeparators(targetFile) {
+			t.Errorf("expected final path %s, got %s", targetFile, finalPath)
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			t.Error("expected regular file, got symlink")
+		}
+	})
+
+	t.Run("absolute path symlink", func(t *testing.T) {
+		// Create target file
+		targetFile := filepath.Join(tmpDir, "abs_target.txt")
+		if err := os.WriteFile(targetFile, []byte("absolute content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create symlink with absolute path
+		symlinkFile := filepath.Join(tmpDir, "abs_link.txt")
+		if err := os.Symlink(targetFile, symlinkFile); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink
+		finalPath, info, err := followSymlink(symlinkFile)
+		if err != nil {
+			t.Fatalf("followSymlink failed: %v", err)
+		}
+
+		if finalPath != fixSeparators(targetFile) {
+			t.Errorf("expected final path %s, got %s", fixSeparators(targetFile), finalPath)
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			t.Error("expected regular file, got symlink")
+		}
+	})
+
+	t.Run("broken symlink", func(t *testing.T) {
+		// Create symlink pointing to non-existent file
+		brokenLink := filepath.Join(tmpDir, "broken_link.txt")
+		nonExistentTarget := filepath.Join(tmpDir, "nonexistent.txt")
+		if err := os.Symlink(nonExistentTarget, brokenLink); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink should return error
+		_, _, err := followSymlink(brokenLink)
+		if err == nil {
+			t.Error("expected error for broken symlink, got nil")
+		}
+		if !strings.Contains(err.Error(), "statting dereferenced symlink") {
+			t.Errorf("expected 'statting dereferenced symlink' error, got: %v", err)
+		}
+	})
+
+	t.Run("symlink to directory", func(t *testing.T) {
+		// Create target directory
+		targetDir := filepath.Join(tmpDir, "target_dir")
+		if err := os.Mkdir(targetDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create symlink to directory
+		symlinkDir := filepath.Join(tmpDir, "link_dir")
+		if err := os.Symlink(targetDir, symlinkDir); err != nil {
+			t.Fatal(err)
+		}
+
+		// Test followSymlink
+		finalPath, info, err := followSymlink(symlinkDir)
+		if err != nil {
+			t.Fatalf("followSymlink failed: %v", err)
+		}
+
+		if finalPath != fixSeparators(targetDir) {
+			t.Errorf("expected final path %s, got %s", fixSeparators(targetDir), finalPath)
+		}
+
+		if !info.IsDir() {
+			t.Error("expected directory, got file")
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			t.Error("expected regular directory, got symlink")
+		}
+	})
+
+	t.Run("maximum symlink depth exceeded", func(t *testing.T) {
+		// Create target file
+		targetFile := filepath.Join(tmpDir, "depth_target.txt")
+		if err := os.WriteFile(targetFile, []byte("depth content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create a chain of 41 symlinks (exceeding the limit of 40)
+		prevLink := targetFile
+		var links []string
+		for i := 0; i < 41; i++ {
+			linkName := filepath.Join(tmpDir, fmt.Sprintf("depth_link_%d.txt", i))
+			if err := os.Symlink(prevLink, linkName); err != nil {
+				t.Fatal(err)
+			}
+			links = append(links, linkName)
+			prevLink = linkName
+		}
+
+		// Test followSymlink should return depth error
+		_, _, err := followSymlink(links[len(links)-1])
+		if err == nil {
+			t.Error("expected error for maximum depth exceeded, got nil")
+		}
+		if !strings.Contains(err.Error(), "maximum symlink depth") {
+			t.Errorf("expected 'maximum symlink depth' error, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "40") {
+			t.Errorf("expected error to mention depth limit of 40, got: %v", err)
+		}
+	})
 }
