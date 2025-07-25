@@ -100,9 +100,19 @@ func FilesFromDisk(ctx context.Context, options *FromDiskOptions, filenames map[
 			var linkTarget string
 			if isSymlink(info) {
 				if options != nil && options.FollowSymlinks {
+					originalFilename := filename
 					filename, info, err = followSymlink(filename)
 					if err != nil {
 						return err
+					}
+					if info.IsDir() {
+						symlinkDirFiles, err := FilesFromDisk(ctx, options, map[string]string{filename: nameInArchive})
+						if err != nil {
+							return fmt.Errorf("getting files from symlink directory %s dereferenced to %s: %w", originalFilename, linkTarget, err)
+						}
+
+						files = append(files, symlinkDirFiles...)
+						return nil
 					}
 				} else {
 					// preserve symlinks
@@ -128,6 +138,7 @@ func FilesFromDisk(ctx context.Context, options *FromDiskOptions, filenames map[
 			}
 
 			files = append(files, file)
+
 			return nil
 		})
 		if walkErr != nil {
@@ -241,7 +252,7 @@ func openAndCopyFile(file FileInfo, w io.Writer) error {
 	// When file is in use and size is being written to, creating the compressed
 	// file will fail with "archive/tar: write too long." Using CopyN gracefully
 	// handles this.
-	_, err = io.Copy(w, fileReader)
+	_, err = io.CopyN(w, fileReader, file.Size())
 	if err != nil && err != io.EOF {
 		return err
 	}
