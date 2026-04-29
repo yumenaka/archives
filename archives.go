@@ -72,6 +72,9 @@ func (f FileInfo) Stat() (fs.FileInfo, error) { return f.FileInfo, nil }
 // an archive.
 func FilesFromDisk(ctx context.Context, options *FromDiskOptions, filenames map[string]string) ([]FileInfo, error) {
 	var files []FileInfo
+
+	inodeMap := make(map[inodeKey]string)
+
 	for rootOnDisk, rootInArchive := range filenames {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -96,9 +99,20 @@ func FilesFromDisk(ctx context.Context, options *FromDiskOptions, filenames map[
 				return nil
 			}
 
-			// handle symbolic links
+			// handle hardlinks for regular files
 			var linkTarget string
-			if isSymlink(info) {
+			if info.Mode().IsRegular() {
+				if key, ok := hardlinkKey(info); ok {
+					if firstPath, exists := inodeMap[key]; exists {
+						linkTarget = firstPath
+					} else {
+						inodeMap[key] = nameInArchive
+					}
+				}
+			}
+
+			// handle symbolic links (only if not already a hardlink)
+			if linkTarget == "" && isSymlink(info) {
 				if options != nil && options.FollowSymlinks {
 					originalFilename := filename
 					filename, info, err = followSymlink(filename)
